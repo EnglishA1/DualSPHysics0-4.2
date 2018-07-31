@@ -71,6 +71,7 @@ void JSphCpu::InitVars(){
   WithFloating=false;
 
   SlipVel = NULL; //-Partial Slip Velocity     SHABA
+  MotionVel = NULL; // - Velocity of a Moving Boundary    SHABA
 
   Idpc=NULL; Codec=NULL; Dcellc=NULL; Posc=NULL; Velrhopc=NULL;
   VelrhopM1c=NULL;                //-Verlet
@@ -96,6 +97,7 @@ void JSphCpu::FreeCpuMemoryFixed(){
   MemCpuFixed=0;
 
   delete[] SlipVel;		 SlipVel = NULL;  // Partial Slip Velocity     SHABA
+  delete[] MotionVel;    MotionVel = NULL; // Velocity of a moving boundary particle   SHABA
 
   delete[] RidpMove;     RidpMove=NULL;
   delete[] FtRidp;       FtRidp=NULL;
@@ -110,6 +112,7 @@ void JSphCpu::AllocCpuMemoryFixed(){
   MemCpuFixed=0;
 
   SlipVel = new tfloat3[Npb]; MemCpuFixed += (sizeof(tfloat3)*Npb); // Partial slip velocity   SHABA
+  MotionVel = new tfloat3[Npb]; MemCpuFixed += (sizeof(tfloat3)*Npb); // Moving boundary velocity SHABA
 
   try{
     //-Allocates memory for moving objects.
@@ -410,7 +413,8 @@ void JSphCpu::InitRunCpu(){
   if(TVisco==VISCO_LaminarSPS)memset(SpsTauc,0,sizeof(tsymatrix3f)*Np);
   if(CaseNfloat)InitFloating();
 
-  memset(SlipVel, 0, sizeof(tfloat3)*Npb);
+  memset(SlipVel, 0, sizeof(tfloat3)*Npb);  // Partial slip vleocity     SHABA
+  memset(MotionVel, 0, sizeof(tfloat3)*Npb);   // Moving Boundary Velocity     SHABA
 }
 
 //==============================================================================
@@ -1625,12 +1629,12 @@ template<bool psingle,TpKernel tker,TpFtMode ftmode> void JSphCpu::InteractionFo
 		InteractionForcesMarrone(p1, pos, velrhop, velmarx, velmary, velmarz, idp, press, code);
 		// This loop calculates the velocity for the marrone boundary particles and gives the boundary particles this velocity
 
+		//float VelBoundx = 0; float VelBoundy = 0; float VelBoundz = 0;
+		//MovementVel(TIMESTEP,VelBoundx,VelBoundy,VelBoundz,p1);
 
-		// MotionVel(TIMESTEP,VelBoundx,VelBoundy,VelBoundz,p1);
-
-		velrhop[p1].x = /*2 * MoveVel[p1].x +*/ 2 * SlipVel[p1].x - velmarx;
-		velrhop[p1].y = /*2 * MoveVel[p1].y +*/ 2 * SlipVel[p1].y - velmary;
-		velrhop[p1].z = /*2 * MoveVel[p1].z +*/ 2 * SlipVel[p1].z - velmarz;
+		velrhop[p1].x = 2 * MotionVel[p1].x + 2 * SlipVel[p1].x - velmarx;
+		velrhop[p1].y = 2 * MotionVel[p1].y + 2 * SlipVel[p1].y - velmary;
+		velrhop[p1].z = 2 * MotionVel[p1].z + 2 * SlipVel[p1].z - velmarz;
 		//   This loop adds the partial slip contribution to the boundary particle in the same way as a wall velocity
 
 		// loops for finding the shear stress at the boundary. in post processing divide by b and multiply by mu
@@ -2954,6 +2958,8 @@ void JSphCpu::MoveLinBound(unsigned np,unsigned ini,const tdouble3 &mvpos,const 
     if(pid!=UINT_MAX){
       UpdatePos(pos[pid],mvpos.x,mvpos.y,mvpos.z,false,pid,pos,dcell,code);
       velrhop[pid].x=mvvel.x;  velrhop[pid].y=mvvel.y;  velrhop[pid].z=mvvel.z;
+	  // Trying to get the velocity of a moving boundary 
+	  MotionVel[pid].x = mvvel.x; MotionVel[pid].x = mvvel.x; MotionVel[pid].x = mvvel.x; // SHABA
     }
   }
 }
@@ -2975,6 +2981,8 @@ void JSphCpu::MoveMatBound(unsigned np,unsigned ini,tmatrix4d m,double dt
       const double dx=ps2.x-ps.x, dy=ps2.y-ps.y, dz=ps2.z-ps.z;
       UpdatePos(ps,dx,dy,dz,false,pid,pos,dcell,code);
       velrhop[pid].x=float(dx/dt);  velrhop[pid].y=float(dy/dt);  velrhop[pid].z=float(dz/dt);
+	  // Trying to get the velocity of a moving boundary 
+	  MotionVel[pid].x = float(dx / dt); MotionVel[pid].y = float(dy / dt); MotionVel[pid].z = float(dz / dt); // SHABA
     }
   }
 }
