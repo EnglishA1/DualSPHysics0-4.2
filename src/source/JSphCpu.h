@@ -176,6 +176,8 @@ protected:
   //===============================================================================================
   tfloat3 *SlipVel; // Slip Velocity       SHABA
   tfloat3 *MotionVel; // Velocity of a moving boundary particle      SHABA
+  tfloat3 *MarroneOld; // Old marrone particle velocity SHABA
+  tfloat3 *SlipOld; // Old partial slip velocity SHABA
 
 
   void PSNormalHunter(unsigned p1, const tdouble3 *pos, const unsigned *idp, float &nx, float &ny, float &nz)const;

@@ -70,8 +70,11 @@ void JSphCpu::InitVars(){
   NpbPer=NpfPer=0;
   WithFloating=false;
 
-  SlipVel = NULL; //-Partial Slip Velocity     SHABA
-  MotionVel = NULL; // - Velocity of a Moving Boundary    SHABA
+  SlipVel = NULL; //-Partial Slip Velocity														SHABA
+  MotionVel = NULL; // - Velocity of a Moving Boundary											SHABA
+  MarroneOld = NULL; // - Old Marrone Velocity													SHABA
+  SlipOld = NULL; // - Old partial slip velocity												SHABA
+
 
   Idpc=NULL; Codec=NULL; Dcellc=NULL; Posc=NULL; Velrhopc=NULL;
   VelrhopM1c=NULL;                //-Verlet
@@ -96,8 +99,11 @@ void JSphCpu::InitVars(){
 void JSphCpu::FreeCpuMemoryFixed(){
   MemCpuFixed=0;
 
-  delete[] SlipVel;		 SlipVel = NULL;  // Partial Slip Velocity     SHABA
-  delete[] MotionVel;    MotionVel = NULL; // Velocity of a moving boundary particle   SHABA
+  delete[] SlipVel;		 SlipVel = NULL;  // Partial Slip Velocity								SHABA
+  delete[] MotionVel;    MotionVel = NULL; // Velocity of a moving boundary particle			SHABA
+  delete[] MarroneOld;   MarroneOld = NULL; // Old Marrone Velocity								SHABA
+  delete[] SlipOld;      SlipOld = NULL; // Old partial slip velocity							SHABA
+
 
   delete[] RidpMove;     RidpMove=NULL;
   delete[] FtRidp;       FtRidp=NULL;
@@ -108,11 +114,13 @@ void JSphCpu::FreeCpuMemoryFixed(){
 //==============================================================================
 /// Allocates memory for arrays with fixed size (motion and floating bodies).
 //==============================================================================
-void JSphCpu::AllocCpuMemoryFixed(){
-  MemCpuFixed=0;
+void JSphCpu::AllocCpuMemoryFixed() {
+	MemCpuFixed = 0;
 
-  SlipVel = new tfloat3[Npb]; MemCpuFixed += (sizeof(tfloat3)*Npb); // Partial slip velocity   SHABA
-  MotionVel = new tfloat3[Npb]; MemCpuFixed += (sizeof(tfloat3)*Npb); // Moving boundary velocity SHABA
+	SlipVel = new tfloat3[Npb]; MemCpuFixed += (sizeof(tfloat3)*Npb); // Partial slip velocity   SHABA
+	MotionVel = new tfloat3[Npb]; MemCpuFixed += (sizeof(tfloat3)*Npb); // Moving boundary velocity SHABA
+	MarroneOld = new tfloat3[Npb]; MemCpuFixed += (sizeof(tfloat3)*Npb); // Old Marrone particle velocity SHABA
+	SlipOld = new tfloat3[Npb]; MemCpuFixed += (sizeof(tfloat3)*Npb); // Old Partial slip velocity  SHABA
 
   try{
     //-Allocates memory for moving objects.
@@ -415,6 +423,8 @@ void JSphCpu::InitRunCpu(){
 
   memset(SlipVel, 0, sizeof(tfloat3)*Npb);  // Partial slip vleocity     SHABA
   memset(MotionVel, 0, sizeof(tfloat3)*Npb);   // Moving Boundary Velocity     SHABA
+  memset(MarroneOld, 0, sizeof(tfloat3)*Npb);  // Old Marrone particle velocity  SHABA
+  memset(SlipOld, 0, sizeof(tfloat3)*Npb); // Old partial slip velocity     SHABA
 }
 
 //==============================================================================
@@ -1609,6 +1619,14 @@ template<bool psingle,TpKernel tker,TpFtMode ftmode> void JSphCpu::InteractionFo
   , tdouble3 *pos,const tfloat3 *pspos, tfloat4 *velrhop,const typecode *code, unsigned *idp
   ,float *press)const
 {
+	// reducing the velocity down to just the moving boundary velocity
+	for (unsigned p1 = 0;p1<Npb;p1++) // finding the boundary particles and calculating the partial slip velocity
+	{
+		velrhop[p1].x -= /*2 * MotionVel[p1].x +*/ 2 * SlipOld[p1].x - MarroneOld[p1].x;
+		velrhop[p1].y -= /*2 * MotionVel[p1].y +*/ 2 * SlipOld[p1].y - MarroneOld[p1].y;
+		velrhop[p1].z -= /*2 * MotionVel[p1].z +*/ 2 * SlipOld[p1].z - MarroneOld[p1].z;
+
+	}
 
 	// Partial Slip Calculations
 	float b = 0.0f; // SLIP LENGTH
@@ -1617,6 +1635,7 @@ template<bool psingle,TpKernel tker,TpFtMode ftmode> void JSphCpu::InteractionFo
 		float SlipVelx = 0, SlipVely = 0, SlipVelz = 0;
 		PartialSlipCalc(p1, SlipVelx, SlipVely, SlipVelz, pos, velrhop, idp, b, nc, hdiv, cellinitial, beginendcell, cellzero, dcell);
 		//  This loop calculates the partial slip velocities
+		SlipOld[p1].x = SlipVelx; SlipOld[p1].y = SlipVely; SlipOld[p1].z = SlipVelz;
 
 	}
 
@@ -1628,13 +1647,14 @@ template<bool psingle,TpKernel tker,TpFtMode ftmode> void JSphCpu::InteractionFo
 		float velmarx = 0, velmary = 0, velmarz = 0;
 		InteractionForcesMarrone(p1, pos, velrhop, velmarx, velmary, velmarz, idp, press, code);
 		// This loop calculates the velocity for the marrone boundary particles and gives the boundary particles this velocity
+		MarroneOld[p1].x = velmarx; MarroneOld[p1].y = velmary; MarroneOld[p1].z = velmarz;
 
 		//float VelBoundx = 0; float VelBoundy = 0; float VelBoundz = 0;
 		//MovementVel(TIMESTEP,VelBoundx,VelBoundy,VelBoundz,p1);
 
-		velrhop[p1].x = 2 * MotionVel[p1].x + 2 * SlipVel[p1].x - velmarx;
-		velrhop[p1].y = 2 * MotionVel[p1].y + 2 * SlipVel[p1].y - velmary;
-		velrhop[p1].z = 2 * MotionVel[p1].z + 2 * SlipVel[p1].z - velmarz;
+		velrhop[p1].x += /*2 * MotionVel[p1].x +*/ 2 * SlipVel[p1].x - velmarx;
+		velrhop[p1].y += /*2 * MotionVel[p1].y +*/ 2 * SlipVel[p1].y - velmary;
+		velrhop[p1].z += /*2 * MotionVel[p1].z +*/ 2 * SlipVel[p1].z - velmarz;
 		//   This loop adds the partial slip contribution to the boundary particle in the same way as a wall velocity
 
 		// loops for finding the shear stress at the boundary. in post processing divide by b and multiply by mu
@@ -2959,7 +2979,7 @@ void JSphCpu::MoveLinBound(unsigned np,unsigned ini,const tdouble3 &mvpos,const 
       UpdatePos(pos[pid],mvpos.x,mvpos.y,mvpos.z,false,pid,pos,dcell,code);
       velrhop[pid].x=mvvel.x;  velrhop[pid].y=mvvel.y;  velrhop[pid].z=mvvel.z;
 	  // Trying to get the velocity of a moving boundary 
-	  MotionVel[pid].x = mvvel.x; MotionVel[pid].x = mvvel.x; MotionVel[pid].x = mvvel.x; // SHABA
+	 // MotionVel[pid].x = mvvel.x; MotionVel[pid].x = mvvel.x; MotionVel[pid].x = mvvel.x; // SHABA
     }
   }
 }
@@ -2982,7 +3002,7 @@ void JSphCpu::MoveMatBound(unsigned np,unsigned ini,tmatrix4d m,double dt
       UpdatePos(ps,dx,dy,dz,false,pid,pos,dcell,code);
       velrhop[pid].x=float(dx/dt);  velrhop[pid].y=float(dy/dt);  velrhop[pid].z=float(dz/dt);
 	  // Trying to get the velocity of a moving boundary 
-	  MotionVel[pid].x = float(dx / dt); MotionVel[pid].y = float(dy / dt); MotionVel[pid].z = float(dz / dt); // SHABA
+	  //MotionVel[pid].x = float(dx / dt); MotionVel[pid].y = float(dy / dt); MotionVel[pid].z = float(dz / dt); // SHABA
     }
   }
 }
